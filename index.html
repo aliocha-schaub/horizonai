@@ -99,7 +99,7 @@ function HorizonAI() {
 
       // Step 2: Claude synthesises
       setLoadingStatus("Generating answer…");
-      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      const claudeRes = await fetch(`${WORKER_URL}/claude`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
