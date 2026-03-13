@@ -98,7 +98,13 @@ function HorizonAI() {
       const [res1, res2, asanaRes] = await Promise.all([
         fetch(`${WORKER_URL}/search?${new URLSearchParams({ query: searchQuery, role }).toString()}`),
         fetch(`${WORKER_URL}/search?${new URLSearchParams({ query: userText, role }).toString()}`),
-        fetch(`${WORKER_URL}/asana?${new URLSearchParams({ query: searchQuery }).toString()}`)
+        (() => {
+          // Extract the most specific token for Asana: invoice codes, task IDs, or proper nouns
+          const asanaQuery = userText.match(/[A-Z]{1,5}\d{4,}/)?.[0]  // e.g. IN131043
+            || userText.split(/\s+/).filter(w => w.length > 3 && /[A-Z]/.test(w[0])).join(" ")  // Capitalised words
+            || userText;
+          return fetch(`${WORKER_URL}/asana?${new URLSearchParams({ query: asanaQuery }).toString()}`);
+        })()
       ]);
       const [data1, data2, asanaData] = await Promise.all([res1.json(), res2.json(), asanaRes.json()]);
       if (data1.error && data2.error) throw new Error("Drive: " + data1.error);
