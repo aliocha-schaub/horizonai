@@ -83,12 +83,40 @@ function HorizonAI() {
     try {
       // Step 1: Search via Cloudflare Worker (handles CORS)
       setLoadingStatus("Searching Shared Drives…");
-      const params = new URLSearchParams({ query: userText, role });
-      const driveRes = await fetch(`${WORKER_URL}/search?${params.toString()}`);
-      const driveData = await driveRes.json();
-      if (driveData.error) throw new Error("Drive: " + driveData.error);
 
-      const docs = driveData.documents || [];
+      // Extract meaningful keywords from question (remove stopwords)
+      const stopwords = new Set(["the","a","an","is","are","was","were","for","of","to","in","on","at","by","with","this","that","it","do","does","did","what","where","when","who","how","can","i","me","my","we","our","you","your","have","has","had","be","been","being","and","or","but","if","from","as","not","no"]);
+      const keywords = userText.toLowerCase()
+        .replace(/[?.,!;:'"]/g, "")
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !stopwords.has(w))
+        .slice(0, 6)
+        .join(" ");
+      const searchQuery = keywords || userText;
+
+      // Run Drive + Asana searches in parallel
+      const [res1, res2, asanaRes] = await Promise.all([
+        fetch(`${WORKER_URL}/search?${new URLSearchParams({ query: searchQuery, role }).toString()}`),
+        fetch(`${WORKER_URL}/search?${new URLSearchParams({ query: userText, role }).toString()}`),
+        fetch(`${WORKER_URL}/asana?${new URLSearchParams({ query: searchQuery }).toString()}`)
+      ]);
+      const [data1, data2, asanaData] = await Promise.all([res1.json(), res2.json(), asanaRes.json()]);
+      if (data1.error && data2.error) throw new Error("Drive: " + data1.error);
+
+      // Merge and deduplicate Drive docs by id
+      const seen = new Set();
+      const docs = [...(data1.documents || []), ...(data2.documents || [])].filter(d => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
+        return true;
+      });
+
+      // Format Asana tasks as context
+      const tasks = asanaData.tasks || [];
+      const asanaContext = tasks.length === 0 ? "" :
+        "\n\nASANA TASKS:\n" + tasks.map((t, i) =>
+          `--- TASK ${i+1}: ${t.name} ---\nAssignee: ${t.assignee}\nDue: ${t.due}\nStatus: ${t.completed ? "Completed" : "Open"}\nProject: ${t.projects || "None"}\nNotes: ${t.notes || "None"}\nURL: ${t.url}`
+        ).join("\n\n");
       setLoadingStatus(`Reading ${docs.length} document${docs.length !== 1 ? "s" : ""}…`);
 
       const docContext = docs.length === 0
@@ -108,7 +136,7 @@ function HorizonAI() {
           system: buildSystemPrompt(role),
           messages: [
             ...newMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
-            { role: "user", content: `RETRIEVED DOCUMENTS:\n\n${docContext}\n\n---\n\nQUESTION: ${userText}` }
+            { role: "user", content: `RETRIEVED DOCUMENTS:\n\n${docContext}${asanaContext}\n\n---\n\nQUESTION: ${userText}` }
           ],
         }),
       });
@@ -120,7 +148,7 @@ function HorizonAI() {
 
       setMessages([...newMessages, {
         role: "assistant", content: reply,
-        sources: docs.filter(d => d.url).map(d => ({ name: d.name, url: d.url }))
+        sources: [...docs.filter(d => d.url).map(d => ({ name: d.name, url: d.url })), ...tasks.filter(t => t.url).map(t => ({ name: '✓ ' + t.name, url: t.url }))]
       }]);
 
     } catch (err) {
