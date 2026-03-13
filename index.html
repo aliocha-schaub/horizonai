@@ -84,7 +84,7 @@ function HorizonAI() {
       // Step 1: Search via Cloudflare Worker (handles CORS)
       setLoadingStatus("Searching Shared Drives…");
       const params = new URLSearchParams({ query: userText, role });
-      const driveRes = await fetch(`${WORKER_URL}?${params.toString()}`);
+      const driveRes = await fetch(`${WORKER_URL}/search?${params.toString()}`);
       const driveData = await driveRes.json();
       if (driveData.error) throw new Error("Drive: " + driveData.error);
 
