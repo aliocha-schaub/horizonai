@@ -107,7 +107,7 @@ function HorizonAI() {
           max_tokens: 1000,
           system: buildSystemPrompt(role),
           messages: [
-            ...newMessages.slice(0, -1),
+            ...newMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
             { role: "user", content: `RETRIEVED DOCUMENTS:\n\n${docContext}\n\n---\n\nQUESTION: ${userText}` }
           ],
         }),
